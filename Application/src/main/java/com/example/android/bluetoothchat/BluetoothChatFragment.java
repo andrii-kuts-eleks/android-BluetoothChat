@@ -16,17 +16,23 @@
 
 package com.example.android.bluetoothchat;
 
+import android.Manifest;
 import android.app.ActionBar;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
+import android.support.v4.content.ContextCompat;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -44,10 +50,23 @@ import android.widget.Toast;
 
 import com.example.android.common.logger.Log;
 
+import org.apache.commons.io.FileUtils;
+
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+
+import static android.widget.Toast.makeText;
+
 /**
  * This fragment controls Bluetooth to communicate with other devices.
  */
 public class BluetoothChatFragment extends Fragment {
+
 
     private static final String TAG = "BluetoothChatFragment";
 
@@ -96,7 +115,7 @@ public class BluetoothChatFragment extends Fragment {
         // If the adapter is null, then Bluetooth is not supported
         if (mBluetoothAdapter == null) {
             FragmentActivity activity = getActivity();
-            Toast.makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
+            makeText(activity, "Bluetooth is not available", Toast.LENGTH_LONG).show();
             activity.finish();
         }
     }
@@ -175,7 +194,11 @@ public class BluetoothChatFragment extends Fragment {
                 if (null != view) {
                     TextView textView = (TextView) view.findViewById(R.id.edit_text_out);
                     String message = textView.getText().toString();
-                    sendMessage(message);
+                    try {
+                        sendMessage(message);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         });
@@ -199,29 +222,60 @@ public class BluetoothChatFragment extends Fragment {
         }
     }
 
+    public static byte[] getFileWithHeader(byte[] bytes) throws IOException {
+        byte[] fileSizeInBytes = intToByteArray(bytes.length);
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        outputStream.write(fileSizeInBytes);
+        outputStream.write(bytes);
+
+        return outputStream.toByteArray();
+    }
+
+    public static byte[] intToByteArray(int a) {
+        return new byte[]{
+                (byte) ((a >> 24) & 0xFF),
+                (byte) ((a >> 16) & 0xFF),
+                (byte) ((a >> 8) & 0xFF),
+                (byte) (a & 0xFF)
+        };
+    }
+
     /**
      * Sends a message.
      *
      * @param message A string of text to send.
      */
-    private void sendMessage(String message) {
-        // Check that we're actually connected before trying anything
-        if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
-            Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
-            return;
-        }
+    private void sendMessage(String message) throws IOException {
+        byte[] bytes = getDataZipFile(Environment.getExternalStorageDirectory().getAbsolutePath() + "/route.zip");
+        int bytesLen = bytes.length;
 
-        // Check that there's actually something to send
-        if (message.length() > 0) {
-            // Get the message bytes and tell the BluetoothChatService to write
-            byte[] send = message.getBytes();
-            mChatService.write(send);
+        byte[] res = getFileWithHeader(bytes);
 
-            // Reset out string buffer to zero and clear the edit text field
-            mOutStringBuffer.setLength(0);
-            mOutEditText.setText(mOutStringBuffer);
-        }
+        Log.d(TAG, "Write Bytes: " + bytes.length + " " + res.length);
+
+
+        mChatService.write(res);
     }
+
+    /**
+     *
+     * @param filePath
+     * @return
+     */
+    private byte[] getDataZipFile(String filePath) {
+        ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 123);
+        File file = new File(filePath);
+        try {
+            byte[] bytes = FileUtils.readFileToByteArray(file);
+            return bytes;
+        } catch (IOException e) {
+            Log.e(TAG, "IOExeption: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return new byte[0];
+    }
+
 
     /**
      * The action listener for the EditText widget, to listen for the return key
@@ -232,7 +286,11 @@ public class BluetoothChatFragment extends Fragment {
             // If the action is a key-up event on the return key, send the message
             if (actionId == EditorInfo.IME_NULL && event.getAction() == KeyEvent.ACTION_UP) {
                 String message = view.getText().toString();
-                sendMessage(message);
+                try {
+                    sendMessage(message);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
             return true;
         }
@@ -243,7 +301,7 @@ public class BluetoothChatFragment extends Fragment {
      *
      * @param resId a string resource ID
      */
-    private void setStatus(int resId) {
+    public void setStatus(int resId) {
         FragmentActivity activity = getActivity();
         if (null == activity) {
             return;
@@ -311,13 +369,13 @@ public class BluetoothChatFragment extends Fragment {
                     // save the connected device's name
                     mConnectedDeviceName = msg.getData().getString(Constants.DEVICE_NAME);
                     if (null != activity) {
-                        Toast.makeText(activity, "Connected to "
+                        makeText(activity, "Connected to "
                                 + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
                     }
                     break;
                 case Constants.MESSAGE_TOAST:
                     if (null != activity) {
-                        Toast.makeText(activity, msg.getData().getString(Constants.TOAST),
+                        makeText(activity, msg.getData().getString(Constants.TOAST),
                                 Toast.LENGTH_SHORT).show();
                     }
                     break;
@@ -347,7 +405,7 @@ public class BluetoothChatFragment extends Fragment {
                 } else {
                     // User did not enable Bluetooth or an error occurred
                     Log.d(TAG, "BT not enabled");
-                    Toast.makeText(getActivity(), R.string.bt_not_enabled_leaving,
+                    makeText(getActivity(), R.string.bt_not_enabled_leaving,
                             Toast.LENGTH_SHORT).show();
                     getActivity().finish();
                 }
