@@ -59,6 +59,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 import static android.widget.Toast.makeText;
 
@@ -233,12 +235,11 @@ public class BluetoothChatFragment extends Fragment {
     }
 
     public static byte[] intToByteArray(int a) {
-        return new byte[]{
-                (byte) ((a >> 24) & 0xFF),
-                (byte) ((a >> 16) & 0xFF),
-                (byte) ((a >> 8) & 0xFF),
-                (byte) (a & 0xFF)
-        };
+        ByteBuffer buffer = ByteBuffer.allocate(4);
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(a);
+        buffer.flip();
+        return buffer.array();
     }
 
     /**
